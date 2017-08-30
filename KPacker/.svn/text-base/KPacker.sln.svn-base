@@ -1,0 +1,26 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "petest", "petest\petest.vcxproj", "{CDEE0A8C-F953-4607-B77F-090211501A55}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "KPacker", "KPacker\KPacker.vcxproj", "{62BAC555-0C46-495C-8541-2F0B831BFCFF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CDEE0A8C-F953-4607-B77F-090211501A55}.Debug|Win32.ActiveCfg = Debug|Win32
+		{CDEE0A8C-F953-4607-B77F-090211501A55}.Debug|Win32.Build.0 = Debug|Win32
+		{CDEE0A8C-F953-4607-B77F-090211501A55}.Release|Win32.ActiveCfg = Release|Win32
+		{CDEE0A8C-F953-4607-B77F-090211501A55}.Release|Win32.Build.0 = Release|Win32
+		{62BAC555-0C46-495C-8541-2F0B831BFCFF}.Debug|Win32.ActiveCfg = Debug|Win32
+		{62BAC555-0C46-495C-8541-2F0B831BFCFF}.Debug|Win32.Build.0 = Debug|Win32
+		{62BAC555-0C46-495C-8541-2F0B831BFCFF}.Release|Win32.ActiveCfg = Release|Win32
+		{62BAC555-0C46-495C-8541-2F0B831BFCFF}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

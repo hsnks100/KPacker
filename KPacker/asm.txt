@@ -1,0 +1,533 @@
+.486 
+.model flat,stdcall 
+option casemap:none 
+include \masm32\include\windows.inc 
+include \masm32\include\kernel32.inc 
+includelib \masm32\lib\kernel32.lib 
+include \masm32\include\user32.inc 
+includelib \masm32\lib\user32.lib
+
+MyMain proto
+ThreadFunc proto arg:DWORD
+
+.data 
+
+;01h -> 암호화
+;00h -> 비암호화(import directory table)
+encSections db 03h, 00h, 00h, 00h, 
+				01h, 00h, 10h, 40h, 00h, 26h, 10h, 40h, 00h, 
+				00h, 00h, 20h, 40h, 00h, 92h, 20h, 40h, 00h, 
+				01h, 00h, 30h, 40h, 00h, 0Bh, 30h, 40h, 00h
+		  
+ImportTables IMAGE_IMPORT_DESCRIPTOR 3 dup (<>, <>, <>) 
+strMsgBox db 0,0,"MessageBoxA", 0 ; user32.dll
+strCrtWindowExA db 0,0,"CreateWindowExA", 0; user32.dll
+strExitProcess db 0,0,"ExitProcess", 0; //kernel32.dll
+strSleep db 0,0,"Sleep", 0; //kernel32.dll
+strKernel32 db "kernel32.dll", 0
+strUser32 db "user32.dll", 0
+user32APIs dd 3 dup (0)
+kernel32APIs dd 3 dup (0)
+IATuser32 dd 3 dup(0)
+IATkernel32 dd 3 dup(0)
+ksooSectionBeg dd 404000h
+ksooSectionEnd dd 40403Ch
+
+.data?
+importAddress dd ?
+
+.code 
+start: 
+invoke MyMain
+invoke ExitProcess, NULL 
+
+MyMain proc
+
+	LOCAL sectionCnt:DWORD
+	LOCAL sectionBeg:DWORD
+	LOCAL sectionEnd:DWORD
+	LOCAL sectionPtr:DWORD
+	LOCAL minyHmod:DWORD
+	LOCAL minyVirtualProtect:DWORD
+	LOCAL minyCreateThread:DWORD
+	LOCAL minyFreeLibrary:DWORD
+	LOCAL minyOldProperties[20]:DWORD
+	LOCAL minyModOfKernel32:DWORD
+	LOCAL importDesc:IMAGE_IMPORT_DESCRIPTOR 
+	;
+	LOCAL imgBase:DWORD
+	LOCAL wholePtr:DWORD
+	LOCAL INTPtr:DWORD
+	LOCAL IATPtr:DWORD
+	LOCAL tmpModule:DWORD
+	LOCAL gabage:DWORD
+	LOCAL isEnc:BYTE	
+	
+	LOCAL IDH:DWORD;
+	LOCAL INH:DWORD;
+	LOCAL IED:DWORD;
+	LOCAL AddressOfNameOrdinals:DWORD;
+	LOCAL AddressOfFunctions:DWORD;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;mov eax, dword ptr fs:[18h]
+	LOCAL antidebug:DWORD
+	
+	
+	
+    ;CreateThread(NULL, 0, ThreadFunc, NULL, 0, &dummy);
+	;######################################################################여기서 부터 #######################################################
+	invoke GetModuleHandle, 0
+	mov imgBase, eax;
+
+	
+	lea esi, [user32APIs]
+	mov dword ptr[esi], 80000200h
+	;mov eax, imgBase
+	;sub [esi], eax
+	
+	lea esi, [user32APIs+4]
+	mov [esi], offset strCrtWindowExA
+	mov eax, imgBase
+	sub [esi], eax
+	
+	lea esi, [kernel32APIs]
+	mov [esi], offset strExitProcess
+	mov eax, imgBase
+	sub [esi], eax
+	
+	lea esi, [kernel32APIs+4]
+	mov [esi], offset strSleep;
+	mov eax, imgBase
+	sub [esi], eax
+	
+	lea eax, [user32APIs]
+	sub eax, imgBase
+	mov ImportTables[0].OriginalFirstThunk, eax
+	mov ImportTables[0].TimeDateStamp, 0
+	mov ImportTables[0].ForwarderChain, 0
+	mov eax, offset strUser32;
+	sub eax, imgBase
+	mov ImportTables[0].Name1, eax
+	mov eax, offset IATuser32
+	sub eax, imgBase
+	mov ImportTables[0].FirstThunk, eax
+	
+	lea eax, [kernel32APIs]
+	sub eax, imgBase
+	mov ImportTables[type IMAGE_IMPORT_DESCRIPTOR*1].OriginalFirstThunk, eax
+	mov ImportTables[type IMAGE_IMPORT_DESCRIPTOR*1].TimeDateStamp, 0
+	mov ImportTables[type IMAGE_IMPORT_DESCRIPTOR*1].ForwarderChain, 0
+	mov eax, offset strKernel32;
+	sub eax, imgBase
+	mov ImportTables[type IMAGE_IMPORT_DESCRIPTOR*1].Name1, eax
+	mov eax, offset IATkernel32
+	sub eax, imgBase
+	mov ImportTables[type IMAGE_IMPORT_DESCRIPTOR*1].FirstThunk, eax
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;동일한 환경 구성하기. 끝
+	;#################################################이까지는 PE 파일과 동일한 환경 구축을 하기 위해서 만들어놓은 곳임 ##########################################
+	;################################################# 머신코드 복사 안해도 됨 ########################################################
+	;invoke LoadLibrary
+	;minyModOfKernel
+	push 0			; "kernel32.dll"																				
+	push 6c6c642eh 
+	push 32336C65h
+	push 6E72656Bh
+																				
+	invoke LoadLibrary, esp ; CALL DWORD PTR DS:[44500D] - LoadLib #
+	db 1 DUP(90h)
+	mov minyModOfKernel32, eax
+	push 7463h    ; "VirtualProtect"
+	push 65746F72h
+	push 506C6175h																
+	push 74726956h
+	invoke GetProcAddress, minyModOfKernel32, esp ; CALL DWORD PTR DS:[445011] - GetProc #
+	db 1 DUP(90h)
+	mov minyVirtualProtect, eax
+	
+	push 797261h
+	push 7262694Ch
+	push 65657246h
+	invoke GetProcAddress, minyModOfKernel32, esp ; CALL DWORD PTR DS:[445011] - GetProc #
+	db 1 DUP(90h)
+	mov minyFreeLibrary, eax
+	
+	push 0          ; "CreateThread"
+	push 64616572h
+	push 68546574h
+	push 61657243h
+	invoke GetProcAddress, minyModOfKernel32, esp ; CALL DWORD PTR DS:[445011] - GetProc #
+	db 1 DUP(90h)
+	mov minyCreateThread, eax
+	
+	push 0
+	push 0
+	push 0
+	push offset ThreadFunc ; push 445900 #
+	push 0
+	push 0
+	call minyCreateThread ; 디버깅 감시용 Thread 생성.
+	;------------------------------------------------------
+	;invoke CreateThread, 0, 0, offset ThreadFunc, 0, 0, 0 ; offset ThreadFunc 는 minysection + 900h
+	
+	mov sectionCnt, 0
+	mov esi, offset encSections ; MOV ESI,404314 #
+					
+	mov eax, [esi]
+	mov sectionCnt, eax
+	add esi, 4
+	xor ecx, ecx
+	.WHILE ecx<sectionCnt; 0x10 복호화.
+		push ecx
+																							
+		mov eax, 9     ;lea eax, [esi + 9*ecx] 하려다가 안되서 세줄로 늘림
+		mul ecx
+		add eax, esi																
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(00) ; 코드 난독화																						
+		mov eax, [eax]
+		mov isEnc, al; 암호화 된다면 1
+																							
+		mov eax, 9; lea eax, [esi + 9*ecx + 1] 하려다가 안되서 네줄로 늘림.
+		mul ecx
+		add eax, esi
+		inc eax
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(12) ; 코드 난독화
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(00) ; 코드 난독화																				
+		mov eax, [eax]
+		mov sectionBeg, eax
+		
+		mov eax, 9			;lea eax, [esi + 9*ecx + 5] 하려다가 안되서 네줄로 늘림.
+		mul ecx
+		add eax, esi
+		add eax, 5
+																							
+		mov eax, [eax]
+		mov sectionEnd, eax
+																				
+		; 권한 변경. READWRITE 로.
+		mov eax, 4
+		mul ecx; eax = 4*ecx 를 수행함.
+		lea edx, minyOldProperties
+		add edx, eax
+		push edx;
+		push PAGE_READWRITE;
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(00) ; 코드 난독화																						
+		mov eax, sectionBeg
+		mov ebx, sectionEnd	
+																							
+		mov edx, ebx
+		sub edx, eax; ebx - eax 결과
+		push edx;
+		push eax
+		call minyVirtualProtect
+		
+		;xor 0x10 수행.
+		mov eax, sectionBeg
+		mov ebx, sectionEnd	
+		.IF isEnc != 0 ; 암호화 되는 부분이라면.
+			.WHILE eax != ebx
+				mov dl, byte ptr [eax];
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(00) ; 코드 난독화																																										
+																				
+				xor dl, 10h
+				mov [eax], dl
+				inc eax
+			.ENDW
+		.ENDIF
+		pop ecx
+		inc ecx
+	.ENDW
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	mov eax, ksooSectionBeg ; mov eax, [404304] #
+	mov ebx, ksooSectionEnd ; mov ebx, [404308] #
+					
+	xor ecx, ecx
+	.WHILE eax != ebx
+		mov dl, [eax]
+		lea edi, [ImportTables] ; mov edi, 404300 #
+		mov edi, [edi]
+		add edi, ecx
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(00) ; 코드 난독화
+		mov byte ptr [edi], dl
+		;mov ImportTables[ecx], dl
+		inc eax
+		inc ecx
+	.ENDW
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	lea esi, [ImportTables]; 어셈코드로는 00405165   8B35 00434000    MOV ESI,DWORD PTR DS:[404300] #
+	;ImportTables 의 주소 얻는 법
+	mov wholePtr, esi
+	.WHILE TRUE
+		mov esi, wholePtr
+		mov edx, [esi]
+		.IF edx != 0
+			JMP CON
+		.ENDIF
+		mov edx, [esi+4]
+		.IF edx != 0
+			JMP CON
+		.ENDIF
+		mov edx, [esi+8]
+					
+		.IF edx != 0
+			JMP CON
+		.ENDIF
+		mov edx, [esi+12]
+		.IF edx != 0
+			JMP CON
+		.ENDIF
+		mov edx, [esi+16]
+		.IF edx != 0
+			JMP CON
+		.ENDIF
+		.BREAK ; 다섯 개 전부 0이 었다면 나감.
+CON: ; 뭔가 하나라도 0이 아니면 할일이 있는거.
+																							push eax ; Anti-Debug 1
+																							db 1 dup(100, 161, 24, 00, 00, 00) ; mov eax, fs:[18]
+																							mov antidebug, eax
+																							pop eax
+		lea eax, [esi+12]; 
+		mov eax, [eax]
+		add eax, imgBase ; ADD EAX, [404310] #
+		invoke LoadLibrary, eax ; dll 네임에 대한 호출 CALL DWORD PTR DS:[44500D] - LoadLib #
+		db 1 DUP(90h)
+		mov tmpModule, eax
+		;하나의 dll 에 대한 반복문 들어감
+		mov eax, [esi]
+																							push eax ; Anti-Debug 2
+																							mov eax, antidebug
+																							mov eax, dword ptr ds:[eax+30h]
+																							mov antidebug, eax
+																							pop eax
+		add eax, imgBase;  ADD EAX, [404310] #
+		mov INTPtr, eax ;INT 값 자체가 들어감.
+		
+		lea eax, [esi+16]
+																							push eax ; Anti-Debug 3
+																							mov eax, antidebug
+																							movzx eax, byte ptr ds:[eax+2]
+																							mov antidebug, eax
+																							pop eax
+		mov eax, [eax]
+		add eax, imgBase ; ADD EAX, [404310] #
+		mov IATPtr, eax
+																							.IF antidebug != 0 ; Anti-Debug 4
+																								xor eax, eax
+																								mov [eax], ebx
+																								jmp eax
+																							.ENDIF
+		.WHILE TRUE
+			mov esi, INTPtr;
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(00) ; 코드 난독화
+			mov edx, [esi]
+			.IF edx == 0
+				mov esi, IATPtr;
+			.ENDIF
+			mov edx, [esi]
+			.IF edx == 0
+				.BREAK
+			.ENDIF
+			
+			.IF edx<80000000h
+				mov edx, [esi]; Thunk Value 들어감.
+				
+				add edx, imgBase; ADD EDX, [404310] #	
+				add edx, 2
+				invoke GetProcAddress, tmpModule, edx ; CALL DWORD PTR DS:[445011] - GetProc #
+				db 1 DUP(90h)
+				
+				mov edi, IATPtr
+				mov [edi], eax
+				
+				;;;;;;;;;;;;;;;;
+				
+			.ELSE
+				;ordinal 로 찾기. 여기서 ordinal 은 DX 임
+				;tmpModule 이 현재 대상의 dll HANDLE
+				
+				mov esi, edx
+				and esi, 0000FFFFh
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(00) ; 코드 난독화				
+				invoke GetProcAddress, tmpModule, esi ; CALL DWORD PTR DS:[445011] - GetProc #
+				db 1 DUP(90h)
+				mov edi, IATPtr
+				mov [edi], eax				
+			.ENDIF
+			
+			mov edx, INTPtr
+			add edx, 4
+			mov INTPtr, edx
+			
+			mov edx, IATPtr
+			add edx, 4
+			mov IATPtr, edx
+		.ENDW
+		;반복문 끝남
+		
+		mov esi, wholePtr
+		add esi, 20
+		mov wholePtr, esi
+	.ENDW
+	
+	mov sectionCnt, 0
+	mov esi, offset encSections; MOV ESI,404314 #
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(121) ; 코드 난독화
+	mov eax, [esi]
+	mov sectionCnt, eax
+	add esi, 4
+	xor ecx, ecx
+	.WHILE ecx<sectionCnt;
+		push ecx
+		mov eax, 9; lea eax, [esi + 9*ecx + 1] 를 하려다가 늘림.
+		mul ecx
+		add eax, esi
+		inc eax
+																			push eax ; Anti-Debug 1
+																			db 1 dup(100, 161, 24, 00, 00, 00) ; mov eax, fs:[18]
+																			mov antidebug, eax
+																			pop eax
+		mov eax, [eax]
+		mov sectionBeg, eax
+					
+		mov eax, 9			;lea eax, [esi + 9*ecx + 5] 를 하려다가 늘림.
+		mul ecx
+		add eax, esi
+																			push eax ; Anti-Debug 2
+																			mov eax, antidebug
+																			mov eax, dword ptr ds:[eax+30h]
+																			mov antidebug, eax
+																			pop eax
+		add eax, 5
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(121) ; 코드 난독화		
+		mov eax, [eax]
+		mov sectionEnd, eax
+					
+		lea eax, [gabage]
+																			push eax ; Anti-Debug 3
+																			mov eax, antidebug
+																			movzx eax, byte ptr ds:[eax+2]
+																			mov antidebug, eax
+																			pop eax
+		push eax
+		mov eax, minyOldProperties[ecx * 4]
+		push eax
+		mov eax, sectionBeg
+		mov ebx, sectionEnd	
+		mov edx, ebx
+																			.IF antidebug != 0 ; Anti-Debug 4
+																				xor eax, eax
+																				mov [eax], ebx
+																				jmp eax
+																			.ENDIF
+		sub edx, eax; ebx - eax 결과
+		push edx;
+		push eax
+		call minyVirtualProtect ;권한 복구
+		
+		pop ecx
+		inc ecx
+	.ENDW
+	ret
+MyMain endp
+
+ThreadFunc proc arg:DWORD
+	LOCAL dwSleep:DWORD
+	LOCAL minyModOfKernel32:DWORD
+	LOCAL antidebug:DWORD
+	push 0			; "kernel32.dll"																				
+	push 6c6c642eh 
+	push 32336C65h
+	push 6E72656Bh
+																				
+	invoke LoadLibrary, esp ; CALL DWORD PTR DS:[44500D] - LoadLib #
+	db 1 DUP(90h)
+	mov minyModOfKernel32, eax
+	push 00000070h;           "Sleep"
+	push 65656C53h;
+	invoke GetProcAddress, minyModOfKernel32, esp ; CALL DWORD PTR DS:[445011] - GetProc #
+	db 1 DUP(90h)
+	mov dwSleep, eax
+	
+	.WHILE TRUE
+		push eax ; Anti-Debug 1
+		db 1 dup(100, 161, 24, 00, 00, 00) ; mov eax, fs:[18]
+		mov antidebug, eax
+		pop eax
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(0) ; 코드 난독화	
+		push eax ; Anti-Debug 2
+		mov eax, antidebug
+		mov eax, dword ptr ds:[eax+30h]
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(12) ; 코드 난독화
+		mov antidebug, eax
+		pop eax
+
+		push eax ; Anti-Debug 3
+		mov eax, antidebug
+		movzx eax, byte ptr ds:[eax+2]
+		mov antidebug, eax
+		pop eax
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(12) ; 코드 난독화
+		.IF antidebug != 0 ; Anti-Debug 4
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(12) ; 코드 난독화
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(12) ; 코드 난독화
+																				db 1 dup(235, 01); EB 01
+																				db 1 dup(12) ; 코드 난독화																																								
+			xor eax, eax
+			mov [eax], ebx
+			jmp eax
+		.ENDIF
+		
+		push 5000; 5초 쉼.
+		call dwSleep
+	.ENDW
+	ret
+ThreadFunc endp
+end start
+
+
+
+
+
+
+;404300 에 DataDirectory[1].VirtualAddress + ImageBase 저장 
+;404304 에 ksooSection 시작위치 
+;404308 에 ksooSection 끝. 
+;40430C 에 Import Table 의 크기 
+;404310 에 ImageBase 값 
+;404314 에 암호화된 섹션의 개수 
+;404318 부터 암호화된 섹션의 시작(voff)위치와 OverOfEnd 를 기록함. 
+;A = LoadLibrary("dll");
+;B = GetProcAddress(A, "API name");
+;
+;
+;
+;
+;404300 에 DataDirectory[1].VirtualAddress + ImageBase 저장          -(importTables)
+;404304 에 ksooSection 시작위치										-삽입해야될 코드...깜빡 ㅜ
+;404308 에 ksooSection 끝.											-삽입해야될 코드...깜빡 ㅜ
+;40430C 에 Import Table 의 크기 
+;404310 에 ImageBase 값 
+;404314 에 암호화된 섹션의 개수										-(encSections)
+;404318 부터 암호화된 섹션의 시작(voff)위치와 OverOfEnd 를 기록함
+;404400 에 OEP 저장.													-OEP
+;40500D - LoadLibrary
+;405011 - GetProcAddress
+;(ThunkValue값이 0x80000000이상인 경우는 서수링크가 되있음을 의미하며,
+;이 때 이 ordinal값은 해당 ThunkValue의 하위 16비트이다.)
+;INT 있으면 해당 정보가 ordinal 인지 함수 이름인지 판단
+;INT 가 0 이면 IAT 를 살펴봄. 해당 정보가 ordinal 인지 함수 이름인지 판단
